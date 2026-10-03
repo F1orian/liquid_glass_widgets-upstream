@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:liquid_glass_widgets/src/renderer/glass_materialize_scope.dart';
 
 // Public widget geometry, normalized to a 200pt root menu. Native reference:
 // Forage #447: 416px root/card width, 404px receded parent, same centre,
@@ -77,18 +78,37 @@ Future<void> open(WidgetTester tester, GlassMenuController c,
   await tester.pumpAndSettle();
 }
 
-// Opacity of the complete card surface (including material and shadow),
-// not only its labels. A fully opaque first/last frame causes the reported pop.
-double cardOpacity(WidgetTester tester, int depth) {
-  final surface = surfaceFor(header(depth));
-  final opacity = tester
-      .widgetList<Opacity>(
-          find.ancestor(of: surface, matching: find.byType(Opacity)))
-      .fold(1.0, (value, widget) => value * widget.opacity);
-  return tester
-      .widgetList<FadeTransition>(
-          find.ancestor(of: surface, matching: find.byType(FadeTransition)))
-      .fold(opacity, (value, widget) => value * widget.opacity.value);
+// Layer opacity cannot fade glass: its backdrop pass stops blurring and the
+// parent's rows show crisply through the card. Cards must use the glass
+// materialize channel instead.
+double layerOpacity(WidgetTester tester, int depth) => tester
+    .widgetList<Opacity>(find.ancestor(
+        of: surfaceFor(header(depth)), matching: find.byType(Opacity)))
+    .fold(1.0, (value, widget) => value * widget.opacity);
+
+GlassMaterializeScope? cardScope(WidgetTester tester, int depth) {
+  final scopes = find.ancestor(
+      of: surfaceFor(header(depth)),
+      matching: find.byType(GlassMaterializeScope));
+  return scopes.evaluate().isEmpty
+      ? null
+      : tester.widget<GlassMaterializeScope>(scopes.first);
+}
+
+double cardGlass(WidgetTester tester, int depth) =>
+    cardScope(tester, depth)?.glassProgress ?? 1.0;
+double cardText(WidgetTester tester, int depth) =>
+    cardScope(tester, depth)?.contentOpacity ?? 1.0;
+
+/// The bug: card rows faded in while the parent's rows still showed through
+/// a half-formed card. Text may appear only over fully formed material.
+void expectNoDoubleText(WidgetTester tester, int depth) {
+  expect(layerOpacity(tester, depth), 1,
+      reason: 'layer opacity disables the card backdrop blur');
+  if (cardText(tester, depth) > 0) {
+    expect(cardGlass(tester, depth), 1,
+        reason: 'card text overlaps unblurred parent text');
+  }
 }
 
 void main() {
@@ -114,20 +134,52 @@ void main() {
 
     await tester.tap(find.text('Projects'));
     await tester.pump();
-    expect(cardOpacity(tester, 1), 1);
-    expect(cardOpacity(tester, 2), 0);
+    expect(cardGlass(tester, 1), 1);
+    expect(cardGlass(tester, 2), 0);
     await tester.pump(const Duration(milliseconds: 100));
-    expect(cardOpacity(tester, 1), 1);
-    expect(cardOpacity(tester, 2), allOf(greaterThan(0), lessThan(1)));
+    expect(cardGlass(tester, 1), 1);
+    expect(cardGlass(tester, 2), allOf(greaterThan(0), lessThan(1)));
     await tester.pumpAndSettle();
     await tester.tap(header(2));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(cardOpacity(tester, 1), 1);
-    expect(cardOpacity(tester, 2), allOf(greaterThan(0), lessThan(1)));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(cardGlass(tester, 1), 1);
+    expect(cardGlass(tester, 2), allOf(greaterThan(0), lessThan(1)));
     await tester.pumpAndSettle();
     expect(header(2), findsNothing);
-    expect(cardOpacity(tester, 1), 1);
+    expect(cardGlass(tester, 1), 1);
+  });
+
+  testWidgets('card text never overlaps parent text through forming glass',
+      (tester) async {
+    final c = GlassMenuController();
+    await open(tester, c);
+    await tester.tap(find.text('Share'));
+    await tester.pump();
+    var sawGlassOnly = false;
+    for (var i = 0; i < 24; i++) {
+      expectNoDoubleText(tester, 1);
+      final glass = cardGlass(tester, 1);
+      if (glass > 0 && glass < 1 && cardText(tester, 1) == 0) {
+        sawGlassOnly = true;
+      }
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(sawGlassOnly, isTrue);
+    await tester.pumpAndSettle();
+    expect(cardText(tester, 1), 1);
+    await tester.tap(header(1));
+    await tester.pump();
+    var sawTextGone = false;
+    while (header(1).evaluate().isNotEmpty) {
+      expectNoDoubleText(tester, 1);
+      if (cardText(tester, 1) == 0 && cardGlass(tester, 1) > 0) {
+        sawTextGone = true;
+      }
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(sawTextGone, isTrue,
+        reason: 'closing must clear card text before dissolving its glass');
   });
 
   testWidgets('the whole submenu card fades in and out without popping',
@@ -136,24 +188,24 @@ void main() {
     await open(tester, c);
     await tester.tap(find.text('Share'));
     await tester.pump();
-    expect(cardOpacity(tester, 1), 0,
+    expect(cardGlass(tester, 1), 0,
         reason: 'the first card frame must not appear at full opacity');
     await tester.pump(const Duration(milliseconds: 80));
-    final opening = cardOpacity(tester, 1);
+    final opening = cardGlass(tester, 1);
     expect(opening, allOf(greaterThan(0), lessThan(1)));
     await tester.pump(const Duration(milliseconds: 80));
-    expect(cardOpacity(tester, 1), greaterThan(opening));
+    expect(cardGlass(tester, 1), greaterThan(opening));
     await tester.pumpAndSettle();
-    expect(cardOpacity(tester, 1), 1);
+    expect(cardGlass(tester, 1), 1);
 
     await tester.tap(header(1));
     await tester.pump();
-    expect(cardOpacity(tester, 1), 1);
-    await tester.pump(const Duration(milliseconds: 80));
-    final closing = cardOpacity(tester, 1);
+    expect(cardGlass(tester, 1), 1);
+    await tester.pump(const Duration(milliseconds: 160));
+    final closing = cardGlass(tester, 1);
     expect(closing, allOf(greaterThan(0), lessThan(1)));
-    await tester.pump(const Duration(milliseconds: 80));
-    expect(cardOpacity(tester, 1), lessThan(closing));
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(cardGlass(tester, 1), lessThan(closing));
     await tester.pumpAndSettle();
     expect(header(1), findsNothing);
     expect(c.submenuDepth, 0);
@@ -254,7 +306,7 @@ void main() {
     await tester.tap(find.text('Share'));
     await tester.pump();
     expect(c.submenuDepth, 1);
-    expect(cardOpacity(tester, 1), 1,
+    expect(cardGlass(tester, 1), 1,
         reason:
             'Reduce Motion shows the card fully without waiting for a fade');
     expect(

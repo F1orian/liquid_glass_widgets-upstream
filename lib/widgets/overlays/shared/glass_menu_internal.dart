@@ -1025,11 +1025,16 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
       passiveScrollOffset:
           isTop ? 0.0 : _submenuStack[levelIndex + 1].sourceScrollOffset,
     );
-    // Fade the complete arriving/departing card, including its glass and
-    // shadow, in step with its expansion. Earlier cards remain opaque while
-    // their rows dim; fading those too would flash the whole stack on nesting.
-    return Opacity(
-      opacity: isTop ? _recedeT : 1.0,
+    // Fade the arriving/departing card through the glass visibility channel,
+    // never layer opacity: an Opacity ancestor stops the backdrop blur, so the
+    // parent's rows would show crisply through the card. Its rows appear only
+    // once the material is fully formed, and clear before it dissolves, so
+    // card and parent text are never both legible. Lower cards stay at rest.
+    final fade = isTop ? _cardFade() : (glass: 1.0, text: 1.0);
+    return GlassMaterializeScope(
+      glassProgress: fade.glass,
+      contentOpacity: fade.text,
+      contentSigma: 0.0,
       child: Transform.scale(
         scale: lerpDouble(1.0, _kRecedeScale, _coverProgress(levelIndex + 1))!,
         alignment: Alignment(0, _growsDown ? -1 : 1),
@@ -1065,6 +1070,29 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
       ),
     );
   }
+
+  /// Staged fade of the top card for the current level morph: on push the
+  /// material forms first and the rows follow; on pop the rows clear first
+  /// and the material dissolves after them.
+  ({double glass, double text}) _cardFade() {
+    final p = _contentMorph.value;
+    double stage(double from, double to) =>
+        Curves.easeOut.transform(((p - from) / (to - from)).clamp(0.0, 1.0));
+    if (_levelMorphPopping) {
+      return (
+        glass: 1.0 - stage(_kCardTextStage, 1.0),
+        text: 1.0 - stage(0.0, _kCardTextStage),
+      );
+    }
+    return (
+      glass: stage(0.0, _kCardTextStage),
+      text: stage(_kCardTextStage, 1.0),
+    );
+  }
+
+  /// The morph fraction at which a card's material is fully formed (push) or
+  /// its rows have fully cleared (pop).
+  static const double _kCardTextStage = 0.4;
 
   /// Vertical offset of row [index] from its list's top (body padding included).
   double _listRowTop(int index, List<Widget> list) {
