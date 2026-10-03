@@ -104,10 +104,10 @@ class GlassMenuItem extends StatefulWidget {
   ///
   /// When non-null, activating the item (tap, slide-and-release, or
   /// [GlassMenuController.endGlide]) does not call [onTap] or close the menu.
-  /// Instead the same menu body morphs in place into this list: the anchored
-  /// corner stays put while the height animates. The pushed list always starts
-  /// with a Back row (labelled by [GlassMenu.submenuBackLabel]) that morphs
-  /// back to the parent list. Submenus may nest.
+  /// Instead a card opens over the parent, which remains visible but recedes
+  /// and dims. The card's header repeats this item's icon and title, in bold,
+  /// with a downward chevron. Activating the header collapses the card.
+  /// Submenus may nest; only the frontmost card's actions are interactive.
   ///
   /// When [trailing] is null a submenu item shows a chevron.
   final List<Widget>? submenu;

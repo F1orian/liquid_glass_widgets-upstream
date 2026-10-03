@@ -3,14 +3,12 @@
 ## Features
 
 - **External glide for `GlassMenu`:** `GlassMenuController.glideTo`, `endGlide` and `cancelGlide` let an external gesture owner (for example a canvas whose long-press opened the menu) drive slide-to-select with a pointer the menu never hit-tested: the item under the finger highlights with a selection haptic, and releasing activates exactly that item. `glideTo` reports whether the position is over the menu body.
-- **`GlassMenu.onLevelChanged`:** reports the submenu depth and the body's resting height when the menu opens and on every submenu push or Back pop, so an owner that positions the menu itself can make room for a taller submenu (or give it back) in step with the morph.
-- **In-place submenus:** `GlassMenuItem.submenu` morphs the same menu body into a child list instead of running the item. The anchored corner stays put while the height, screen clamping, and rows animate; every pushed list starts with a Back row (`GlassMenu.submenuBackLabel`) that morphs back to the parent. Submenu rows show a trailing chevron by default. `GlassMenuController.submenuDepth` reports the current level.
+- **`GlassMenu.onLevelChanged`:** reports depth and the full stack's resting extent from the root's anchored edge on open and every push/pop. An external owner can make room for overhanging cards without moving the menu independently of its source.
+- **Layered submenus:** `GlassMenuItem.submenu` opens a full-width card over the parent, which recedes to 0.971× and dims its rows to 50%. The card's bold header repeats the source row's icon/title with a downward chevron; selecting it collapses the card. Header alignment follows the source row, submenus can nest, and Reduce Motion is supported. Replaces the earlier in-place swap and removes `submenuBackLabel`.
 
 ## Bug Fixes
 
-- **Keyboard and assistive activation of `GlassMenu` rows:** on non-scrollable menus, a row's keyboard activation and VoiceOver / TalkBack tap action were silently ignored (only touch slide-to-select activated rows). They now activate the row (including submenu and Back rows) while touch taps still activate exactly once.
-- **Submenu morph keeps rows fixed on menus that grow upward:** the outgoing and incoming lists are pinned to the menu's anchored edge (top for menus that grow down, bottom for menus that grow up), so on bottom-anchored menus the outgoing rows no longer jump by the height difference mid-fade. Touches during the morph are absorbed instead of risking the wrong row.
-- **Submenu rows crossfade sequentially:** during an in-place submenu push or pop, the outgoing rows fade out over the first half of the morph and the incoming rows fade in over the second, so text never overlaps mid-morph.
+- **Keyboard and assistive activation of `GlassMenu` rows:** non-scrollable menus now respond to keyboard and semantics taps as well as touch. Covered parent rows are excluded from focus and semantics; touch taps still activate exactly once.
 - **Menu rows have contiguous hit zones:** the 2 px gap between rows now belongs to the adjacent rows, so releasing a slide-to-select between two rows activates the highlighted row instead of silently doing nothing.
 
 # 1.8.0

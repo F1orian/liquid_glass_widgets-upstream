@@ -35,7 +35,8 @@ Future<void> _open(WidgetTester tester, GlassMenuController controller) async {
 
 void main() {
   group('GlassMenuController glide', () {
-    testWidgets('glideTo + endGlide activates exactly the item under the '
+    testWidgets(
+        'glideTo + endGlide activates exactly the item under the '
         'external pointer and closes the menu', (tester) async {
       final controller = GlassMenuController();
       final tapped = <String>[];
@@ -105,7 +106,8 @@ void main() {
       expect(tapped, isFalse);
     });
 
-    testWidgets('the gap between two rows belongs to a row (contiguous hit '
+    testWidgets(
+        'the gap between two rows belongs to a row (contiguous hit '
         'zones), so a release there is never silently dropped', (tester) async {
       final controller = GlassMenuController();
       final tapped = <String>[];
@@ -166,13 +168,12 @@ void main() {
           ),
         ];
 
-    testWidgets('tapping a submenu item morphs the same menu into its list '
-        'headed by Back, without running or closing', (tester) async {
+    testWidgets('opening a card keeps its parent visible without running it',
+        (tester) async {
       final controller = GlassMenuController();
       final tapped = <String>[];
       await tester.pumpWidget(_host(controller, items(tapped)));
       await _open(tester, controller);
-      final firstRowTop = tester.getTopLeft(find.text('Copy'));
 
       await tester.tap(find.text('Resize'));
       await tester.pumpAndSettle();
@@ -180,20 +181,16 @@ void main() {
       expect(tapped, isEmpty);
       expect(controller.isOpen, isTrue);
       expect(controller.submenuDepth, 1);
-      expect(find.text('Back'), findsOneWidget);
+      expect(find.text('Resize'), findsNWidgets(2));
+      expect(find.text('Back'), findsNothing);
       expect(find.text('Small'), findsOneWidget);
       expect(find.text('Large'), findsOneWidget);
-      expect(find.text('Copy'), findsNothing);
-      // Back is the first row, in the same spot the parent's first row had:
-      // the anchored (top-left) corner did not move.
-      expect(tester.getTopLeft(find.text('Back')).dy,
-          moreOrLessEquals(firstRowTop.dy, epsilon: 0.5));
-      // Back sits above every submenu item.
-      expect(tester.getCenter(find.text('Back')).dy,
+      expect(find.text('Copy'), findsOneWidget);
+      expect(tester.getCenter(find.text('Resize').last).dy,
           lessThan(tester.getCenter(find.text('Small')).dy));
     });
 
-    testWidgets('Back morphs back to the parent list', (tester) async {
+    testWidgets('the header collapses back to the parent list', (tester) async {
       final controller = GlassMenuController();
       final tapped = <String>[];
       await tester.pumpWidget(_host(controller, items(tapped)));
@@ -201,7 +198,7 @@ void main() {
 
       await tester.tap(find.text('Resize'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Back'));
+      await tester.tap(find.text('Resize').last);
       await tester.pumpAndSettle();
 
       expect(controller.submenuDepth, 0);
@@ -279,8 +276,9 @@ void main() {
       node.owner!.performAction(node.id, SemanticsAction.tap);
     }
 
-    testWidgets('a semantics tap activates rows on a non-scrollable menu, '
-        'including a submenu row and its Back row', (tester) async {
+    testWidgets(
+        'a semantics tap activates rows on a non-scrollable menu, '
+        'including a submenu row and its header', (tester) async {
       final semantics = tester.ensureSemantics();
       final controller = GlassMenuController();
       final tapped = <String>[];
@@ -300,7 +298,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.submenuDepth, 1);
 
-      semanticTap(tester, 'Back');
+      semanticTap(tester, 'Resize');
       await tester.pumpAndSettle();
       expect(controller.submenuDepth, 0);
 
@@ -326,51 +324,8 @@ void main() {
     });
   });
 
-  group('submenu crossfade', () {
-    double opacityOf(WidgetTester tester, String text) {
-      final fades = tester
-          .widgetList<FadeTransition>(find.ancestor(
-            of: find.text(text),
-            matching: find.byType(FadeTransition),
-          ))
-          .map((f) => f.opacity.value);
-      return fades.fold(1.0, (a, b) => a * b);
-    }
-
-    testWidgets('the outgoing rows fade out before the incoming rows fade in '
-        '(no overlapping text mid-morph)', (tester) async {
-      final controller = GlassMenuController();
-      await tester.pumpWidget(_host(controller, [
-        GlassMenuItem(title: 'Copy', onTap: () {}),
-        GlassMenuItem(
-          title: 'Resize',
-          onTap: () {},
-          submenu: [GlassMenuItem(title: 'Large', onTap: () {})],
-        ),
-      ]));
-      await _open(tester, controller);
-
-      await tester.tap(find.text('Resize'));
-      await tester.pump(); // morph starts
-      await tester.pump(const Duration(milliseconds: 80)); // first quarter
-      expect(opacityOf(tester, 'Copy'), greaterThan(0.0));
-      expect(opacityOf(tester, 'Large'), 0.0,
-          reason: 'incoming rows stay hidden while the old rows fade out');
-
-      await tester.pump(const Duration(milliseconds: 160)); // third quarter
-      expect(find.text('Copy'), findsOneWidget); // still mounted, outgoing
-      expect(opacityOf(tester, 'Copy'), 0.0,
-          reason: 'outgoing rows are gone before the new rows show');
-      expect(opacityOf(tester, 'Large'), greaterThan(0.0));
-
-      await tester.pumpAndSettle();
-      expect(find.text('Copy'), findsNothing);
-      expect(opacityOf(tester, 'Large'), 1.0);
-    });
-  });
-
   group('onLevelChanged', () {
-    testWidgets('reports the body height on open and on every push and pop',
+    testWidgets('reports the stack extent on open and on every push and pop',
         (tester) async {
       final controller = GlassMenuController();
       final levels = <(int, double)>[];
@@ -413,10 +368,12 @@ void main() {
 
       await tester.tap(find.text('AI'));
       await tester.pumpAndSettle();
-      // Back + divider (12) + 4 rows: 5 × 44 + 12 + 24 + 5 gaps × 2.
-      expect(levels.last, (1, 5 * 44.0 + 12 + 24 + 5 * 2));
+      // Header + divider + four rows is 266pt, starting 43.68pt below
+      // the root top (native header/source-row alignment after recession).
+      expect(levels.last.$1, 1);
+      expect(levels.last.$2, closeTo(309.68, .05));
 
-      await tester.tap(find.text('Back'));
+      await tester.tap(find.text('AI').last);
       await tester.pumpAndSettle();
       expect(levels.last, (0, 2 * 44.0 + 24 + 2));
       expect(levels, hasLength(3));
@@ -465,37 +422,20 @@ void main() {
       GlassMenuAlignment.topLeft,
       GlassMenuAlignment.bottomLeft,
     ]) {
-      testWidgets('${alignment.name}: outgoing and incoming rows never jump '
-          'while the body resizes', (tester) async {
+      testWidgets(
+          '${alignment.name}: root returns to its original position '
+          'after the card collapses', (tester) async {
         final controller = GlassMenuController();
         await tester.pumpWidget(anchoredHost(controller, alignment));
         controller.open();
         await tester.pumpAndSettle();
 
-        // Push a taller submenu: the outgoing root rows stay put while they
-        // fade, and the incoming rows already sit where they will rest.
         final copyBefore = tester.getTopLeft(find.text('Copy'));
         await tester.tap(find.text('AI'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 80));
-        expect(tester.getTopLeft(find.text('Copy')),
-            offsetMoreOrLessEquals(copyBefore, epsilon: 0.5));
-        final lastMid = tester.getTopLeft(find.text('ai 4'));
         await tester.pumpAndSettle();
-        expect(tester.getTopLeft(find.text('ai 4')),
-            offsetMoreOrLessEquals(lastMid, epsilon: 0.5));
-
-        // Pop back to the shorter root: same in reverse.
-        final backBefore = tester.getTopLeft(find.text('Back'));
-        await tester.tap(find.text('Back'));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 80));
-        expect(tester.getTopLeft(find.text('Back')),
-            offsetMoreOrLessEquals(backBefore, epsilon: 0.5));
-        final copyMid = tester.getTopLeft(find.text('Copy'));
+        expect(find.text('Copy'), findsOneWidget);
+        await tester.tap(find.text('AI').last);
         await tester.pumpAndSettle();
-        expect(tester.getTopLeft(find.text('Copy')),
-            offsetMoreOrLessEquals(copyMid, epsilon: 0.5));
         expect(tester.getTopLeft(find.text('Copy')),
             offsetMoreOrLessEquals(copyBefore, epsilon: 0.5));
       });
@@ -511,7 +451,9 @@ void main() {
       GlassMenuItem(
         title: 'More',
         onTap: () {},
-        submenu: [GlassMenuItem(title: 'Only', onTap: () => tapped.add('Only'))],
+        submenu: [
+          GlassMenuItem(title: 'Only', onTap: () => tapped.add('Only'))
+        ],
       ),
     ]));
     await _open(tester, controller);

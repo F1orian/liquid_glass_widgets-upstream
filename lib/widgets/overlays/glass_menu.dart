@@ -287,18 +287,21 @@ class GlassMenu extends StatefulWidget {
   /// Defaults to 10.0.
   final double continuousSwipeSlop;
 
-  /// Label of the Back row that heads every submenu pushed by a
-  /// [GlassMenuItem.submenu]. Defaults to `'Back'`.
-  final String submenuBackLabel;
-
-  /// Called with the submenu depth (0 = root list) and the body's resting
-  /// height whenever the visible list changes: when the menu opens and on
-  /// every [GlassMenuItem.submenu] push or Back pop, just before the in-place
-  /// morph animates.
+  /// Called with the submenu depth (0 = root list) and the resting height of
+  /// the whole visible stack — the menu body, plus every open submenu card
+  /// that extends past it — whenever the stack changes: when the menu opens,
+  /// and on every [GlassMenuItem.submenu] push or header pop, just before the
+  /// layering morph animates.
+  ///
+  /// The height is measured from the menu's anchored edge, the way
+  /// [GlassMenu.menuAlignment] grows the body: a menu anchored at its top
+  /// (growing down) reports the distance from the body's top to the stack's
+  /// lowest edge, one anchored at its bottom reports the distance from the
+  /// body's bottom to the stack's highest edge.
   ///
   /// Lets an external owner that positions the menu itself (typically with
-  /// [autoAdjustToScreen] off) make room for a taller submenu — or give it
-  /// back for a shorter one — for example by moving the menu with
+  /// [autoAdjustToScreen] off) make room for a taller stack — or give it back
+  /// when a card closes — for example by moving the menu with
   /// [GlassMenuController.setFollowOffset].
   final void Function(int depth, double height)? onLevelChanged;
 
@@ -339,7 +342,6 @@ class GlassMenu extends StatefulWidget {
     this.morphSpeed = MorphSpeed.normal,
     this.enableContinuousSwipe = false,
     this.continuousSwipeSlop = 10.0,
-    this.submenuBackLabel = 'Back',
     this.onLevelChanged,
   }) : assert(trigger != null || triggerBuilder != null,
             'Either trigger or triggerBuilder must be provided');
