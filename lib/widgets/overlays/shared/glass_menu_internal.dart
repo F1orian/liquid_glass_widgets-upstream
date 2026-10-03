@@ -1020,6 +1020,7 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
       level.list,
       interactive: isTop,
       dimmed: dimmed,
+      coveredDepth: dimmed ? levelIndex + 1 : null,
       coverProgress: _coverProgress(levelIndex + 1),
       viewportHeight: _cardRect(levelIndex).height,
       passiveScrollOffset:
@@ -1027,9 +1028,10 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
     );
     // Fade the arriving/departing card through the glass visibility channel,
     // never layer opacity: an Opacity ancestor stops the backdrop blur, so the
-    // parent's rows would show crisply through the card. Its rows appear only
-    // once the material is fully formed, and clear before it dissolves, so
-    // card and parent text are never both legible. Lower cards stay at rest.
+    // parent's rows would show crisply through the card. Native iOS shows the
+    // card's rows from the start of its growth while the parent rows it
+    // covers cross-fade away ([_coveredRowOpacity]); there is no blank,
+    // frosted card stage. Lower cards stay at rest.
     final fade = isTop ? _cardFade() : (glass: 1.0, text: 1.0);
     return GlassMaterializeScope(
       glassProgress: fade.glass,
@@ -1071,28 +1073,49 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
     );
   }
 
-  /// Staged fade of the top card for the current level morph: on push the
-  /// material forms first and the rows follow; on pop the rows clear first
-  /// and the material dissolves after them.
+  /// Eased progress of the current level morph between [from] and [to].
+  double _morphStage(double from, double to) => Curves.easeOut
+      .transform(((_contentMorph.value - from) / (to - from)).clamp(0.0, 1.0));
+
+  /// Fade of the top card. On push its rows arrive with the material (and
+  /// lead it, so the card never shows as an empty frosted panel); on pop the
+  /// material dissolves together with the rows (just behind them), so no
+  /// frame shows an empty frosted card blurring the returning parent rows.
   ({double glass, double text}) _cardFade() {
-    final p = _contentMorph.value;
-    double stage(double from, double to) =>
-        Curves.easeOut.transform(((p - from) / (to - from)).clamp(0.0, 1.0));
     if (_levelMorphPopping) {
       return (
-        glass: 1.0 - stage(_kCardTextStage, 1.0),
-        text: 1.0 - stage(0.0, _kCardTextStage),
+        glass: 1.0 - _morphStage(0.0, 0.32),
+        text: 1.0 - _morphStage(0.0, 0.3),
       );
     }
-    return (
-      glass: stage(0.0, _kCardTextStage),
-      text: stage(_kCardTextStage, 1.0),
-    );
+    return (glass: _morphStage(0.0, 0.45), text: _morphStage(0.0, 0.3));
   }
 
-  /// The morph fraction at which a card's material is fully formed (push) or
-  /// its rows have fully cleared (pop).
-  static const double _kCardTextStage = 0.4;
+  /// Opacity of the rows at [depth] that the card above it covers once
+  /// settled: they cross-fade out faster than the card's rows arrive, and
+  /// return as those clear on pop, so the two sets of labels never compete
+  /// and no frame shows an empty frosted card over hidden rows. Rows the card does not cover keep the usual dimming.
+  double _coveredRowOpacity(int depth) {
+    if (depth >= _submenuStack.length) return 1.0;
+    if (depth < _submenuStack.length - 1) return 0.0;
+    return _levelMorphPopping
+        ? _morphStage(0.1, 0.35)
+        : 1.0 - _morphStage(0.0, 0.15);
+  }
+
+  /// Whether row [index] of the level at [depth] lies under the settled card
+  /// that level's submenu opens (its centre inside the card's rect).
+  bool _isCoveredRow(int depth, int index, List<Widget> items) {
+    final parentRect =
+        depth == 0 ? _restingBodyOverlayRect() : _cardRect(depth - 1);
+    final receded = _scaleLevelRect(parentRect, _kRecedeScale);
+    final card = _cardRect(depth);
+    final centre = _listRowTop(index, items) +
+        _getScaledItemHeight(items[index], context) / 2 -
+        _submenuStack[depth].sourceScrollOffset;
+    final y = receded.top + centre * _kRecedeScale;
+    return y > card.top && y < card.bottom;
+  }
 
   /// Vertical offset of row [index] from its list's top (body padding included).
   double _listRowTop(int index, List<Widget> list) {
@@ -1779,6 +1802,7 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
                   widget.items,
                   interactive: interactive,
                   dimmed: !interactive,
+                  coveredDepth: interactive ? null : 0,
                   coverProgress: _bodyRecede,
                   viewportHeight: _targetBodyHeight(),
                   morphValue: clampedValue,
@@ -1808,7 +1832,10 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
     required double viewportHeight,
     double morphValue = 1.0,
     double passiveScrollOffset = 0.0,
+    int? coveredDepth,
   }) {
+    final coveredOpacity =
+        coveredDepth == null ? 1.0 : _coveredRowOpacity(coveredDepth);
     final itemOpacity = _morphController.isClosing
         ? ((morphValue - 0.85) / 0.15).clamp(0.0, 1.0)
         : ((morphValue - 0.25) / 0.45).clamp(0.0, 1.0);
@@ -1824,7 +1851,10 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
         const SizedBox(height: _kBodyVerticalPadding),
         for (var i = 0; i < items.length; i++) ...[
           Opacity(
-            opacity: itemOpacity,
+            opacity:
+                coveredDepth != null && _isCoveredRow(coveredDepth, i, items)
+                    ? itemOpacity * coveredOpacity
+                    : itemOpacity,
             child: Transform.scale(
               scale: itemScale,
               child: interactive ? _buildWrappedItems()[i] : items[i],

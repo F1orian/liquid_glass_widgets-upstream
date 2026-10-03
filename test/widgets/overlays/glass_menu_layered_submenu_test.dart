@@ -100,15 +100,29 @@ double cardGlass(WidgetTester tester, int depth) =>
 double cardText(WidgetTester tester, int depth) =>
     cardScope(tester, depth)?.contentOpacity ?? 1.0;
 
-/// The bug: card rows faded in while the parent's rows still showed through
-/// a half-formed card. Text may appear only over fully formed material.
-void expectNoDoubleText(WidgetTester tester, int depth) {
-  expect(layerOpacity(tester, depth), 1,
+/// Effective opacity of a visible label (all Opacity ancestors).
+double labelOpacity(WidgetTester tester, Finder label) => tester
+    .widgetList<Opacity>(
+        find.ancestor(of: label, matching: find.byType(Opacity)))
+    .fold(1.0, (value, widget) => value * widget.opacity);
+
+/// Native choreography: the card's rows arrive with its material (never an
+/// empty frosted card), and the parent rows it covers cross-fade away, so
+/// the two sets of labels never compete at full strength.
+void expectNativeCrossFade(WidgetTester tester, {required bool opening}) {
+  expect(layerOpacity(tester, 1), 1,
       reason: 'layer opacity disables the card backdrop blur');
-  if (cardText(tester, depth) > 0) {
-    expect(cardGlass(tester, depth), 1,
-        reason: 'card text overlaps unblurred parent text');
+  final glass = cardGlass(tester, 1), text = cardText(tester, 1);
+  if (opening) {
+    expect(text, greaterThanOrEqualTo(glass - 1e-9),
+        reason: 'the card must not appear as an empty frosted panel');
+  } else {
+    expect(text, lessThanOrEqualTo(glass + 1e-9),
+        reason: 'closing clears the card rows before its material');
   }
+  expect(labelOpacity(tester, find.text('Move To')) + text,
+      lessThanOrEqualTo(1 + 1e-6),
+      reason: 'covered parent rows and card rows must cross-fade');
 }
 
 void main() {
@@ -142,7 +156,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(header(2));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 50));
     expect(cardGlass(tester, 1), 1);
     expect(cardGlass(tester, 2), allOf(greaterThan(0), lessThan(1)));
     await tester.pumpAndSettle();
@@ -150,36 +164,42 @@ void main() {
     expect(cardGlass(tester, 1), 1);
   });
 
-  testWidgets('card text never overlaps parent text through forming glass',
+  testWidgets('card rows cross-fade with the parent rows they cover',
       (tester) async {
     final c = GlassMenuController();
     await open(tester, c);
     await tester.tap(find.text('Share'));
     await tester.pump();
-    var sawGlassOnly = false;
+    var sawCardRows = false;
     for (var i = 0; i < 24; i++) {
-      expectNoDoubleText(tester, 1);
-      final glass = cardGlass(tester, 1);
-      if (glass > 0 && glass < 1 && cardText(tester, 1) == 0) {
-        sawGlassOnly = true;
+      expectNativeCrossFade(tester, opening: true);
+      if (cardGlass(tester, 1) < .5 && cardText(tester, 1) > .3) {
+        sawCardRows = true;
       }
       await tester.pump(const Duration(milliseconds: 16));
     }
-    expect(sawGlassOnly, isTrue);
+    expect(sawCardRows, isTrue,
+        reason: 'rows should be legible while the material is still forming');
     await tester.pumpAndSettle();
     expect(cardText(tester, 1), 1);
+    expect(labelOpacity(tester, find.text('Move To')), 0,
+        reason: 'a covered row is hidden under the settled card');
+    expect(labelOpacity(tester, find.text('Open')), closeTo(.5, 1e-9),
+        reason: 'uncovered parent rows keep the native 50% dimming');
     await tester.tap(header(1));
     await tester.pump();
-    var sawTextGone = false;
     while (header(1).evaluate().isNotEmpty) {
-      expectNoDoubleText(tester, 1);
-      if (cardText(tester, 1) == 0 && cardGlass(tester, 1) > 0) {
-        sawTextGone = true;
+      expectNativeCrossFade(tester, opening: false);
+      if (cardText(tester, 1) == 0) {
+        expect(cardGlass(tester, 1), lessThan(.05),
+            reason: 'no empty frosted card once its rows have cleared');
+        expect(labelOpacity(tester, find.text('Move To')), greaterThan(.3),
+            reason: 'covered parent rows return as the card rows clear');
       }
       await tester.pump(const Duration(milliseconds: 16));
     }
-    expect(sawTextGone, isTrue,
-        reason: 'closing must clear card text before dissolving its glass');
+    await tester.pumpAndSettle();
+    expect(labelOpacity(tester, find.text('Move To')), 1);
   });
 
   testWidgets('the whole submenu card fades in and out without popping',
@@ -201,10 +221,10 @@ void main() {
     await tester.tap(header(1));
     await tester.pump();
     expect(cardGlass(tester, 1), 1);
-    await tester.pump(const Duration(milliseconds: 160));
+    await tester.pump(const Duration(milliseconds: 40));
     final closing = cardGlass(tester, 1);
     expect(closing, allOf(greaterThan(0), lessThan(1)));
-    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump(const Duration(milliseconds: 30));
     expect(cardGlass(tester, 1), lessThan(closing));
     await tester.pumpAndSettle();
     expect(header(1), findsNothing);
