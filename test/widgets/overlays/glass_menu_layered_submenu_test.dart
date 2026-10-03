@@ -76,6 +76,30 @@ Future<void> open(WidgetTester tester, GlassMenuController c,
 }
 
 void main() {
+  testWidgets(
+      'a contained card reports the receded parent extent, not its old height',
+      (tester) async {
+    final c = GlassMenuController();
+    final heights = <double>[];
+    await tester
+        .pumpWidget(host(c, onLevelChanged: (_, h) => heights.add(h), items: [
+      GlassMenuItem(
+          title: 'More',
+          onTap: () {},
+          submenu: [GlassMenuItem(title: 'Child', onTap: () {})]),
+      for (var i = 0; i < 5; i++) GlassMenuItem(title: 'Row $i', onTap: () {}),
+    ]));
+    c.open();
+    await tester.pumpAndSettle();
+    final rootHeight = heights.single;
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+    expect(heights.last, closeTo(rootHeight * .971, .05));
+    await tester.tap(header(1));
+    await tester.pumpAndSettle();
+    expect(heights.last, rootHeight);
+  });
+
   testWidgets('glide reaches the overhang and can collapse via exposed parent',
       (tester) async {
     final c = GlassMenuController();

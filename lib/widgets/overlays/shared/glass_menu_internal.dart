@@ -1081,38 +1081,28 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
   /// anchored edge the way the menu grows: the body's own receded extent, plus
   /// how far the cards reach past it. This is what `onLevelChanged` reports so
   /// an external owner can make room for the card.
-  double _stackExtent() {
-    final rest = _restingBodyOverlayRect();
-    final bodyHeight = _targetBodyHeight();
-    final growsDown = _growsDown;
-    final anchored = growsDown ? rest.top : rest.bottom;
-    var far = bodyHeight;
-    for (var i = 0; i < _submenuStack.length; i++) {
-      final cardRect = _cardRect(i);
-      final reach =
-          growsDown ? cardRect.bottom - anchored : anchored - cardRect.top;
-      if (reach > far) far = reach;
+  double _stackExtent() => _extentAtDepth(_submenuStack.length);
+
+  Rect _boundsAtDepth(int depth) {
+    final root = _restingBodyOverlayRect();
+    var bounds = depth == 0 ? root : _scaleLevelRect(root, _kRecedeScale);
+    for (var i = 0; i < depth; i++) {
+      final card = _cardRect(i);
+      bounds = bounds.expandToInclude(
+          i == depth - 1 ? card : _scaleLevelRect(card, _kRecedeScale));
     }
-    return far;
+    return bounds;
+  }
+
+  double _extentAtDepth(int depth) {
+    final root = _restingBodyOverlayRect();
+    final bounds = _boundsAtDepth(depth);
+    return _growsDown ? bounds.bottom - root.top : root.bottom - bounds.top;
   }
 
   /// The stack extent once the popping card is gone (what `onLevelChanged`
   /// reports on pop, before the level is removed).
-  double _stackExtentAfterPop() {
-    if (_submenuStack.length <= 1) return _targetBodyHeight();
-    final rest = _restingBodyOverlayRect();
-    final bodyHeight = _targetBodyHeight();
-    final growsDown = _growsDown;
-    final anchored = growsDown ? rest.top : rest.bottom;
-    var far = bodyHeight;
-    for (var i = 0; i < _submenuStack.length - 1; i++) {
-      final cardRect = _cardRect(i);
-      final reach =
-          growsDown ? cardRect.bottom - anchored : anchored - cardRect.top;
-      if (reach > far) far = reach;
-    }
-    return far;
-  }
+  double _stackExtentAfterPop() => _extentAtDepth(_submenuStack.length - 1);
 
   /// Re-clamps the whole stack (body + cards) for its current extent, the way
   /// the body alone was clamped before submenus existed. Only active when the
@@ -1123,12 +1113,8 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
     if (widget.autoAdjustToScreen) {
       // Clamp the union without changing the root's anchor equation.
       final origin = _triggerGlobalPosition - _triggerOverlayPosition;
-      var bounds = _restingBodyOverlayRect();
-      for (var i = 0; i < depth; i++) {
-        bounds = bounds.expandToInclude(_cardRect(i));
-      }
-      bounds =
-          bounds.shift(origin - Offset(_horizontalOffset, _verticalOffset));
+      final bounds = _boundsAtDepth(depth)
+          .shift(origin - Offset(_horizontalOffset, _verticalOffset));
       final mq = MediaQuery.of(context);
       final padding = mq.padding + widget.menuPadding;
       double fit(double lo, double hi, double min, double max) =>
