@@ -3,6 +3,7 @@
 ## Features
 
 - **External glide for `GlassMenu`:** `GlassMenuController.glideTo`, `endGlide` and `cancelGlide` let an external gesture owner (for example a canvas whose long-press opened the menu) drive slide-to-select with a pointer the menu never hit-tested: the item under the finger highlights with a selection haptic, and releasing activates exactly that item. `glideTo` reports whether the position is over the menu body.
+- **`GlassMenu.maxStackHeight`:** external placement owners can constrain the entire stack without enabling automatic positioning. Overhanging cards scroll within the remaining height, keeping every action reachable on short viewports.
 - **`GlassMenu.onLevelChanged`:** reports depth and the full stack's resting extent from the root's anchored edge on open and every push/pop. An external owner can make room for overhanging cards without moving the menu independently of its source.
 - **Layered submenus:** `GlassMenuItem.submenu` opens a full-width card over the parent, which recedes to 0.971× and dims its rows to 50%. The card's bold header repeats the source row's icon/title with a downward chevron; selecting it collapses the card. Header alignment follows the source row, submenus can nest, and Reduce Motion is supported. Replaces the earlier in-place swap and removes `submenuBackLabel`.
 

@@ -757,8 +757,6 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
   }
 
   /// The index of [item] in the list currently shown, or -1.
-  int _indexOfItem(Widget item, List<Widget> list) => list.indexOf(item);
-
   /// Opens a card over the menu (or the card below it) for [parent]'s
   /// submenu. The card's header sits on the row that was activated, the body
   /// below recedes and dims, and the whole stack is re-clamped for the card's
@@ -766,7 +764,7 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
   void _pushSubmenu(GlassMenuItem parent) {
     if (_contentMorph.isAnimating || _morphController.isClosing) return;
     final sourceList = _items;
-    final sourceIndex = _indexOfItem(parent, sourceList);
+    final sourceIndex = sourceList.indexOf(parent);
     if (sourceIndex < 0) return;
     final sourceOffset = _listRowTop(sourceIndex, sourceList) -
         (_scrollController.hasClients ? _scrollController.offset : 0.0);
@@ -949,11 +947,23 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
     final rowCentreY = recededParent.top +
         (level.sourceRowTop + level.sourceRowHeight / 2) * _kRecedeScale;
     final headerHeight = _getScaledItemHeight(level.list.first, context);
-    final height = _visibleListHeight(level.list);
+    var height = _visibleListHeight(level.list);
     var top = rowCentreY - _kBodyVerticalPadding - headerHeight / 2;
-    top = _growsDown
-        ? math.max(parentRect.top, top)
-        : math.min(parentRect.bottom - height, top);
+    final root = _restingBodyOverlayRect();
+    final budget = _maximumStackHeight;
+    if (_growsDown) {
+      // Keep a header and the first child reachable even if the source row
+      // is at the very bottom of a tall/scrolled ancestor.
+      final minimumViewport =
+          math.min(height, _listHeight(level.list.take(3).toList()));
+      top = math.max(parentRect.top, top);
+      top = math.min(top, root.top + budget - minimumViewport);
+      height = math.min(height, root.top + budget - top);
+    } else {
+      top = math.min(parentRect.bottom - height, top);
+      top = math.max(top, root.bottom - budget);
+      height = math.min(height, parentRect.bottom - top);
+    }
     return Rect.fromLTWH(parentRect.left, top, parentRect.width, height);
   }
 
@@ -1011,7 +1021,7 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
       interactive: isTop,
       dimmed: dimmed,
       coverProgress: _coverProgress(levelIndex + 1),
-      viewportHeight: _visibleListHeight(level.list),
+      viewportHeight: _cardRect(levelIndex).height,
       passiveScrollOffset:
           isTop ? 0.0 : _submenuStack[levelIndex + 1].sourceScrollOffset,
     );
@@ -1049,8 +1059,8 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
                 clipper: ShapeBorderClipper(shape: shape),
                 child: OverflowBox(
                   alignment: Alignment.topCenter,
-                  minHeight: _visibleListHeight(level.list),
-                  maxHeight: _visibleListHeight(level.list),
+                  minHeight: _cardRect(levelIndex).height,
+                  maxHeight: _cardRect(levelIndex).height,
                   child: cardContent,
                 ),
               ),
@@ -1555,7 +1565,7 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
   /// the fixed [GlassMenu.menuHeight] when set.
   double _targetBodyHeight() {
     if (widget.menuHeight != null) {
-      return widget.menuHeight!;
+      return math.min(widget.menuHeight!, _maximumStackHeight);
     }
 
     // Account for system text scaling when calculating natural height.
@@ -1572,7 +1582,8 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
     // Add vertical padding (12px top + 12px bottom = 24px total)
     // plus vertical gaps between items (2px each)
     final gaps = (widget.items.length - 1) * 2.0;
-    final naturalHeight = itemHeights + 24.0 + gaps;
+    final naturalHeight =
+        math.min(itemHeights + 24.0 + gaps, _maximumStackHeight);
 
     if (widget.autoAdjustToScreen) {
       if (mediaQuery != null) {
@@ -2000,15 +2011,16 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
         _activeHeight < _listHeight(_items) - 1.0;
   }
 
-  double get _activeHeight =>
-      _submenuStack.isEmpty ? _targetBodyHeight() : _visibleListHeight(_items);
+  double get _activeHeight => _submenuStack.isEmpty
+      ? _targetBodyHeight()
+      : _cardRect(_submenuStack.length - 1).height;
 
-  double _visibleListHeight(List<Widget> items) {
-    final natural = _listHeight(items);
-    if (!widget.autoAdjustToScreen) return natural;
+  double get _maximumStackHeight {
+    final external = widget.maxStackHeight ?? double.infinity;
+    if (!widget.autoAdjustToScreen) return external;
     final mq = MediaQuery.of(context);
     return math.min(
-        natural,
+        external,
         math.max(
             0.0,
             mq.size.height -
@@ -2016,6 +2028,9 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
                 widget.menuPadding.vertical -
                 20));
   }
+
+  double _visibleListHeight(List<Widget> items) =>
+      math.min(_listHeight(items), _maximumStackHeight);
 
   /// Accounts for system text scaling.
   ///

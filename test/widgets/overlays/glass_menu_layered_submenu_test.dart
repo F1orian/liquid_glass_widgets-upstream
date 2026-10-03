@@ -19,6 +19,7 @@ Widget host(
   void Function(int, double)? onLevelChanged,
   List<Widget>? items,
   bool reduceMotion = false,
+  double? maxStackHeight,
 }) =>
     MaterialApp(
         home: MediaQuery(
@@ -35,6 +36,7 @@ Widget host(
             stretch: 0,
             interactionScale: 1,
             onLevelChanged: onLevelChanged,
+            maxStackHeight: maxStackHeight,
             trigger: const SizedBox(width: 8, height: 8),
             items: items ??
                 [
@@ -76,6 +78,49 @@ Future<void> open(WidgetTester tester, GlassMenuController c,
 }
 
 void main() {
+  for (final alignment in [
+    GlassMenuAlignment.topLeft,
+    GlassMenuAlignment.bottomLeft
+  ]) {
+    testWidgets(
+        '${alignment.name}: constrained stack scrolls all children into reach',
+        (tester) async {
+      final c = GlassMenuController();
+      final heights = <double>[];
+      var chosen = false;
+      await tester.pumpWidget(host(c,
+          alignment: alignment,
+          maxStackHeight: 350,
+          onLevelChanged: (_, h) => heights.add(h),
+          items: [
+            for (var i = 0; i < 4; i++)
+              GlassMenuItem(title: 'Row $i', onTap: () {}),
+            GlassMenuItem(title: 'AI', onTap: () {}, submenu: [
+              for (var i = 0; i < 12; i++)
+                GlassMenuItem(title: 'Action $i', onTap: () => chosen = true),
+            ]),
+          ]));
+      c.open();
+      await tester.pumpAndSettle();
+      final root = paintedRect(tester, surfaceFor(find.text('Row 0')));
+      await tester.tap(find.text('AI'));
+      await tester.pumpAndSettle();
+      final card = paintedRect(tester, surfaceFor(header(1)));
+      expect(heights.last, closeTo(350, .05));
+      final extent = alignment == GlassMenuAlignment.topLeft
+          ? card.bottom - root.top
+          : root.bottom - card.top;
+      expect(extent, lessThanOrEqualTo(350.05));
+      await tester.drag(find.text('Action 0'), const Offset(0, -650));
+      await tester.pumpAndSettle();
+      expect(card.contains(tester.getCenter(find.text('Action 11'))), isTrue);
+      await tester.tap(find.text('Action 11'));
+      await tester.pumpAndSettle();
+      expect(chosen, isTrue);
+      expect(c.isOpen, isFalse);
+    });
+  }
+
   testWidgets(
       'a contained card reports the receded parent extent, not its old height',
       (tester) async {

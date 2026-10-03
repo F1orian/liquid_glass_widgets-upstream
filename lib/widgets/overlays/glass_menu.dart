@@ -197,6 +197,15 @@ class GlassMenu extends StatefulWidget {
   /// If provided, the menu will have a fixed height and internal scrolling.
   final double? menuHeight;
 
+  /// Maximum vertical extent of the root and all layered submenu cards.
+  ///
+  /// External placement owners can set their available bounds height without
+  /// enabling [autoAdjustToScreen]. Each card uses the space remaining after
+  /// its source-row offset and scrolls when necessary. In exceptionally short
+  /// viewports the header moves toward the anchor to keep navigation reachable.
+  /// Null imposes no external limit; automatic screen adjustment still applies.
+  final double? maxStackHeight;
+
   /// The minimum distance between the menu and the screen edges.
   ///
   /// Only applies when [autoAdjustToScreen] is true.
@@ -327,6 +336,7 @@ class GlassMenu extends StatefulWidget {
     this.allowPositiveY,
     this.allowNegativeY,
     this.menuHeight,
+    this.maxStackHeight,
     this.menuPadding = EdgeInsets.zero,
     this.selectionColor = const Color(0x3DFFFFFF),
     this.enableInteractionGlow = true,
@@ -343,7 +353,8 @@ class GlassMenu extends StatefulWidget {
     this.enableContinuousSwipe = false,
     this.continuousSwipeSlop = 10.0,
     this.onLevelChanged,
-  }) : assert(trigger != null || triggerBuilder != null,
+  })  : assert(maxStackHeight == null || maxStackHeight > 0),
+        assert(trigger != null || triggerBuilder != null,
             'Either trigger or triggerBuilder must be provided');
 
   @override
