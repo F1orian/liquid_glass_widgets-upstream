@@ -77,7 +77,88 @@ Future<void> open(WidgetTester tester, GlassMenuController c,
   await tester.pumpAndSettle();
 }
 
+// Opacity of the complete card surface (including material and shadow),
+// not only its labels. A fully opaque first/last frame causes the reported pop.
+double cardOpacity(WidgetTester tester, int depth) {
+  final surface = surfaceFor(header(depth));
+  final opacity = tester
+      .widgetList<Opacity>(
+          find.ancestor(of: surface, matching: find.byType(Opacity)))
+      .fold(1.0, (value, widget) => value * widget.opacity);
+  return tester
+      .widgetList<FadeTransition>(
+          find.ancestor(of: surface, matching: find.byType(FadeTransition)))
+      .fold(opacity, (value, widget) => value * widget.opacity.value);
+}
+
 void main() {
+  testWidgets('nested transitions fade only the top card and add no tint veil',
+      (tester) async {
+    final c = GlassMenuController();
+    await open(tester, c);
+    await tester.tap(find.text('Move To'));
+    await tester.pumpAndSettle();
+    final root = tester.widget<GlassContainer>(surfaceFor(find.text('Open')));
+    final card = tester.widget<GlassContainer>(surfaceFor(header(1)));
+    expect(card.quality, root.quality);
+    expect(card.settings, root.settings);
+    expect(
+        find.descendant(
+            of: surfaceFor(header(1)),
+            matching: find.byWidgetPredicate((widget) =>
+                widget is ColoredBox &&
+                (widget.color == const Color(0x99FFFFFF) ||
+                    widget.color == const Color(0x33000000)))),
+        findsNothing,
+        reason: 'submenu must not have an extra light/dark color wash');
+
+    await tester.tap(find.text('Projects'));
+    await tester.pump();
+    expect(cardOpacity(tester, 1), 1);
+    expect(cardOpacity(tester, 2), 0);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(cardOpacity(tester, 1), 1);
+    expect(cardOpacity(tester, 2), allOf(greaterThan(0), lessThan(1)));
+    await tester.pumpAndSettle();
+    await tester.tap(header(2));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(cardOpacity(tester, 1), 1);
+    expect(cardOpacity(tester, 2), allOf(greaterThan(0), lessThan(1)));
+    await tester.pumpAndSettle();
+    expect(header(2), findsNothing);
+    expect(cardOpacity(tester, 1), 1);
+  });
+
+  testWidgets('the whole submenu card fades in and out without popping',
+      (tester) async {
+    final c = GlassMenuController();
+    await open(tester, c);
+    await tester.tap(find.text('Share'));
+    await tester.pump();
+    expect(cardOpacity(tester, 1), 0,
+        reason: 'the first card frame must not appear at full opacity');
+    await tester.pump(const Duration(milliseconds: 80));
+    final opening = cardOpacity(tester, 1);
+    expect(opening, allOf(greaterThan(0), lessThan(1)));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(cardOpacity(tester, 1), greaterThan(opening));
+    await tester.pumpAndSettle();
+    expect(cardOpacity(tester, 1), 1);
+
+    await tester.tap(header(1));
+    await tester.pump();
+    expect(cardOpacity(tester, 1), 1);
+    await tester.pump(const Duration(milliseconds: 80));
+    final closing = cardOpacity(tester, 1);
+    expect(closing, allOf(greaterThan(0), lessThan(1)));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(cardOpacity(tester, 1), lessThan(closing));
+    await tester.pumpAndSettle();
+    expect(header(1), findsNothing);
+    expect(c.submenuDepth, 0);
+  });
+
   for (final alignment in [
     GlassMenuAlignment.topLeft,
     GlassMenuAlignment.bottomLeft
@@ -173,6 +254,9 @@ void main() {
     await tester.tap(find.text('Share'));
     await tester.pump();
     expect(c.submenuDepth, 1);
+    expect(cardOpacity(tester, 1), 1,
+        reason:
+            'Reduce Motion shows the card fully without waiting for a fade');
     expect(
         paintedRect(tester, surfaceFor(header(1))).height, closeTo(220, .05));
     await tester.tap(header(1));

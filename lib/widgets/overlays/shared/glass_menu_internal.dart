@@ -1025,7 +1025,12 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
       passiveScrollOffset:
           isTop ? 0.0 : _submenuStack[levelIndex + 1].sourceScrollOffset,
     );
-    return Transform.scale(
+    // Fade the complete arriving/departing card, including its glass and
+    // shadow, in step with its expansion. Earlier cards remain opaque while
+    // their rows dim; fading those too would flash the whole stack on nesting.
+    return Opacity(
+      opacity: isTop ? _recedeT : 1.0,
+      child: Transform.scale(
         scale: lerpDouble(1.0, _kRecedeScale, _coverProgress(levelIndex + 1))!,
         alignment: Alignment(0, _growsDown ? -1 : 1),
         child: GlassContainer(
@@ -1040,33 +1045,25 @@ class _GlassMenuState extends State<GlassMenu> with TickerProviderStateMixin {
           shape: shape,
           clipBehavior: Clip.antiAlias,
           glowIntensity: widget.glowIntensity,
-          child: Stack(
-            children: [
-              // Native cards read lighter than the menu body beneath them.
-              Positioned.fill(
-                child: ColoredBox(
-                  color: GlassTheme.brightnessOf(context) == Brightness.dark
-                      ? const Color(0x33000000)
-                      : const Color(0x99FFFFFF),
-                ),
-              ),
-              GlassGlow(
-                enabled: widget.enableInteractionGlow && isTop,
-                glowOnTapOnly: widget.glowOnTapOnly,
-                glowColor: widget.glowColor ?? CupertinoColors.white,
-                glowRadius: widget.glowRadius,
-                glowBlurRadius: 40,
-                clipper: ShapeBorderClipper(shape: shape),
-                child: OverflowBox(
-                  alignment: Alignment.topCenter,
-                  minHeight: _cardRect(levelIndex).height,
-                  maxHeight: _cardRect(levelIndex).height,
-                  child: cardContent,
-                ),
-              ),
-            ],
+          // Same material as the root. Any apparent brightening comes from
+          // compositing over the parent, not a separate white/black tint veil.
+          child: GlassGlow(
+            enabled: widget.enableInteractionGlow && isTop,
+            glowOnTapOnly: widget.glowOnTapOnly,
+            glowColor: widget.glowColor ?? CupertinoColors.white,
+            glowRadius: widget.glowRadius,
+            glowBlurRadius: 40,
+            clipper: ShapeBorderClipper(shape: shape),
+            child: OverflowBox(
+              alignment: Alignment.topCenter,
+              minHeight: _cardRect(levelIndex).height,
+              maxHeight: _cardRect(levelIndex).height,
+              child: cardContent,
+            ),
           ),
-        ));
+        ),
+      ),
+    );
   }
 
   /// Vertical offset of row [index] from its list's top (body padding included).
