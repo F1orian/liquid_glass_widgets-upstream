@@ -40,6 +40,8 @@ URL parameters:
 
 `screenshots/` contains Chromium web captures at 393 × 852 logical pixels: `root.png`, `share.png`, `move-to.png`, `tag.png`, `edge-root.png`, and `edge-tag.png`. Native references and the native transition recording are in Forage's `design/native-ios/context-menu-submenus/` directory.
 
+`comparison/` places native iOS captures next to the demo at the same scale (iOS, GlassMenu, 50% overlay) for root, Share, Move To and Tag, plus opening and closing frame strips. The transition strips are not time-aligned.
+
 The submenu card uses the same glass settings as the root menu. Its brighter appearance over the parent comes from compositing; there is no separate submenu tint.
 
 ## Checks
